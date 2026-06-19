@@ -2,9 +2,8 @@ name: Stealth Bot Runner
 
 on:
   schedule:
-    # Ye bot har 2 ghante mein ek baar chalega
     - cron: '0 */2 * * *' 
-  workflow_dispatch: # Manual run button ke liye
+  workflow_dispatch: 
 
 jobs:
   run-bot:
@@ -17,11 +16,9 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
 
       - name: Install Chromium & Modern Dependencies
-        # Yahan se purana libgconf-2-4 hata diya hai aur libgbm1 add kiya hai
         run: |
           sudo apt-get update
           sudo apt-get install -y chromium-browser libnss3 libfontconfig1 libgbm1
 
       - name: Build and Run Bot
         run: cargo run --release
-
