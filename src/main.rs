@@ -3,7 +3,6 @@ use std::ffi::OsStr;
 use std::time::Duration;
 use tokio::time::sleep;
 
-// Ultimate Helper: Chrome ke andar JS daal kar element dhoondega aur click karega
 async fn click_element_by_js(
     browser: &Browser, 
     tab: &Tab, 
@@ -20,7 +19,6 @@ async fn click_element_by_js(
 
     println!("[Step] JS Engine searching for: '{}'...", action_name);
 
-    // Pure JavaScript snippet jo text content scan karega aur event dispatch karega
     let js_script = format!(
         r#"
         (() => {{
@@ -29,13 +27,8 @@ async fn click_element_by_js(
             for (let el of elements) {{
                 let text = (el.innerText || el.textContent || "").toLowerCase().trim();
                 if (text.includes(target)) {{
-                    // Element ko screen ke center me laao
                     el.scrollIntoView({{ behavior: 'instant', block: 'center', inline: 'center' }});
-                    
-                    // Standard click
                     el.click();
-                    
-                    // Backup mouse events dispatch (for stubborn or hidden buttons)
                     ['mousedown', 'mouseup', 'click'].forEach(eventType => {{
                         const ev = new MouseEvent(eventType, {{ bubbles: true, cancelable: true, view: window }});
                         el.dispatchEvent(ev);
@@ -50,7 +43,6 @@ async fn click_element_by_js(
     );
 
     let mut clicked = false;
-    // 6 Alag attempts karega agar page late respond kare
     for attempt in 1..=6 {
         if let Ok(remote_obj) = tab.evaluate(&js_script, true) {
             if let Some(b) = remote_obj.value.and_then(|v| v.as_bool()) {
@@ -70,16 +62,23 @@ async fn click_element_by_js(
         return Err(format!("Fatal: JS Engine could not locate or click '{}'", action_name).into());
     }
 
-    // Click ke turant baad khulne wale fake ad tabs ko band karo
     sleep(Duration::from_secs(2)).await; 
-    if let Ok(all_tabs) = browser.get_tabs() {
+    
+    // --- BUG FIXED HERE: Added .lock() before checking Ok() ---
+    if let Ok(all_tabs) = browser.get_tabs().lock() {
         if all_tabs.len() > 1 {
-            for t in all_tabs {
+            // Rust safety: list ko pehle clone kar lo taaki loop ke dauran crash na ho
+            let mut tabs_to_close = Vec::new();
+            for t in all_tabs.iter() {
                 let url = t.get_url();
                 if !url.contains("shortxlinks") && !url.contains("himalaycollege") && !url.contains("mic1") && !url.contains("about:blank") {
-                    println!("[Ad Control] Closing fake popup tab: {}", url);
-                    let _ = t.close(true);
+                    tabs_to_close.push(t.clone());
                 }
+            }
+            
+            for t in tabs_to_close {
+                println!("[Ad Control] Closing fake popup tab: {}", t.get_url());
+                let _ = t.close(true);
             }
         }
     }
@@ -106,7 +105,6 @@ async fn run_bot() -> Result<(), Box<dyn std::error::Error>> {
     tab.navigate_to(target_url)?;
     tab.wait_until_navigated()?;
 
-    // --- CYCLE 1: Instant clicks without long delays ---
     println!("\n=========================================");
     println!("          EXECUTING ROUTINE CYCLE 1/2    ");
     println!("=========================================");
@@ -114,7 +112,6 @@ async fn run_bot() -> Result<(), Box<dyn std::error::Error>> {
     click_element_by_js(&browser, &tab, "klik 2x", "KLIK 2X BUTTON", 0).await?;
     click_element_by_js(&browser, &tab, "download", "LINK DOWNLOAD", 0).await?;
 
-    // --- CYCLE 2: Short safe delay for dynamic loading ---
     println!("\n=========================================");
     println!("          EXECUTING ROUTINE CYCLE 2/2    ");
     println!("=========================================");
@@ -122,7 +119,6 @@ async fn run_bot() -> Result<(), Box<dyn std::error::Error>> {
     click_element_by_js(&browser, &tab, "klik 2x", "KLIK 2X BUTTON", 0).await?;
     click_element_by_js(&browser, &tab, "download", "LINK DOWNLOAD", 0).await?;
 
-    // --- FINAL STEP: Get Link ---
     println!("\n=========================================");
     println!("          FETCHING FINAL DESTINATION     ");
     println!("=========================================");
