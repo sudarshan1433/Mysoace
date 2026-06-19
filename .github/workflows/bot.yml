@@ -1,0 +1,26 @@
+name: Stealth Bot Runner
+
+on:
+  schedule:
+    # Ye bot har 2 ghante mein ek baar chalega (cron syntax)
+    - cron: '0 */2 * * *' 
+  workflow_dispatch: # Isse tum GitHub website se manually bhi "Run" button daba sakte ho
+
+jobs:
+  run-bot:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install Chromium & Dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y chromium-browser libnss3 libgconf-2-4 libfontconfig1
+
+      - name: Build and Run Bot
+        run: cargo run --release
+
