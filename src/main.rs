@@ -3,15 +3,16 @@ use std::ffi::OsStr;
 use std::time::Duration;
 use tokio::time::sleep;
 
-// Helper: Yeh function har click ko perform karega aur check karega
-fn perform_action(tab: &Tab, xpath: &str, action_name: &str) -> Result<(), Box<dyn std::error::Error>> {
-    println!("[Step] Searching for: {}...", action_name);
+// Helper: Action perform karne ke liye (Ab ye properly async hai)
+async fn perform_action(tab: &Tab, xpath: &str, action_name: &str) -> Result<(), Box<dyn std::error::Error>> {
+    println!("[Step] Trying to find/click: {}...", action_name);
     
-    // Element ka wait karo (timeout 20 sec)
+    // Element ka wait karo aur click karo
     let element = tab.wait_for_xpath(xpath)?;
     element.click()?;
     
-    println!("[Success] Clicked: {}. Waiting...", action_name);
+    println!("[Success] Clicked: {}. Waiting for next page...", action_name);
+    // Page load hone ka wait (5 seconds)
     sleep(Duration::from_secs(5)).await; 
     
     Ok(())
@@ -34,18 +35,18 @@ async fn run_bot() -> Result<(), Box<dyn std::error::Error>> {
     tab.navigate_to(target_url)?;
     tab.wait_until_navigated()?;
 
-    // --- LOOP START: Ye sequence 2 baar chalega ---
+    // --- LOOP START: Yeh sequence 2 baar chalega ---
     for i in 1..=2 {
         println!("\n=== STARTING CYCLE {}/2 ===", i);
         
         // 1. I'm Not Robot
-        perform_action(&tab, "//*[contains(text(), \"I'M NOT ROBOT\")]", "I'M NOT ROBOT")?;
+        perform_action(&tab, "//*[contains(text(), \"I'M NOT ROBOT\")]", "I'M NOT ROBOT").await?;
 
         // 2. Klik 2X
-        perform_action(&tab, "//*[contains(text(), \"KLIK 2X\")]", "KLIK 2X")?;
+        perform_action(&tab, "//*[contains(text(), \"KLIK 2X\")]", "KLIK 2X").await?;
 
         // 3. Link Download
-        perform_action(&tab, "//*[contains(text(), \"LINK DOWNLOAD\")]", "LINK DOWNLOAD")?;
+        perform_action(&tab, "//*[contains(text(), \"LINK DOWNLOAD\")]", "LINK DOWNLOAD").await?;
         
         println!("=== FINISHED CYCLE {}/2 ===\n", i);
     }
@@ -53,10 +54,10 @@ async fn run_bot() -> Result<(), Box<dyn std::error::Error>> {
 
     // Final Step: Get Link
     println!("[Final] Searching for final GET LINK button...");
-    perform_action(&tab, "//*[contains(text(), \"GET LINK\")]", "GET LINK")?;
+    perform_action(&tab, "//*[contains(text(), \"GET LINK\")]", "GET LINK").await?;
     
-    // Redirect ka wait
-    println!("[Final] Waiting for redirect...");
+    // Final redirect ka wait
+    println!("[Final] Waiting for redirect to destination...");
     sleep(Duration::from_secs(10)).await;
     
     let final_url = tab.get_url();
