@@ -3,35 +3,74 @@ use std::ffi::OsStr;
 use std::time::Duration;
 use tokio::time::sleep;
 
-// Helper: Isme 'wait_before' parameter add kiya hai taaki control hamare hath me ho
-async fn perform_action(
+// Ultimate Helper: Chrome ke andar JS daal kar element dhoondega aur click karega
+async fn click_element_by_js(
     browser: &Browser, 
     tab: &Tab, 
-    search_text: &str, 
+    keyword: &str, 
     action_name: &str, 
     wait_before: u64
 ) -> Result<(), Box<dyn std::error::Error>> {
     println!("\n[Info] Current URL: {}", tab.get_url());
     
-    // Agar wait_before 0 se bada hai, tabhi rukega, nahi toh skip!
     if wait_before > 0 {
-        println!("[Wait] Letting ads load for {} seconds...", wait_before);
+        println!("[Wait] Pausing for {} seconds...", wait_before);
         sleep(Duration::from_secs(wait_before)).await;
-    } else {
-        println!("[Instant] No wait required for this page. Targetting immediately!");
     }
 
-    let xpath = format!(
-        "//*[contains(translate(normalize-space(.), 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), '{}')]",
-        search_text.to_lowercase()
+    println!("[Step] JS Engine searching for: '{}'...", action_name);
+
+    // Pure JavaScript snippet jo text content scan karega aur event dispatch karega
+    let js_script = format!(
+        r#"
+        (() => {{
+            const target = "{}".toLowerCase();
+            const elements = document.querySelectorAll('button, a, div, span, p, input[type="button"]');
+            for (let el of elements) {{
+                let text = (el.innerText || el.textContent || "").toLowerCase().trim();
+                if (text.includes(target)) {{
+                    // Element ko screen ke center me laao
+                    el.scrollIntoView({{ behavior: 'instant', block: 'center', inline: 'center' }});
+                    
+                    // Standard click
+                    el.click();
+                    
+                    // Backup mouse events dispatch (for stubborn or hidden buttons)
+                    ['mousedown', 'mouseup', 'click'].forEach(eventType => {{
+                        const ev = new MouseEvent(eventType, {{ bubbles: true, cancelable: true, view: window }});
+                        el.dispatchEvent(ev);
+                    }});
+                    return true;
+                }}
+            }}
+            return false;
+        }})()
+        "#,
+        keyword
     );
 
-    let element = tab.wait_for_xpath(&xpath)?;
-    element.scroll_into_view()?;
-    element.click()?;
-    println!("[Success] Clicked: {}", action_name);
+    let mut clicked = false;
+    // 6 Alag attempts karega agar page late respond kare
+    for attempt in 1..=6 {
+        if let Ok(remote_obj) = tab.evaluate(&js_script, true) {
+            if let Some(b) = remote_obj.value.and_then(|v| v.as_bool()) {
+                if b {
+                    println!("[Success] JS executed and successfully clicked '{}' (Attempt {})!", action_name, attempt);
+                    clicked = true;
+                    break;
+                }
+            }
+        }
+        println!("[Wait] Button not ready yet, scrolling down and retrying ({}/6)...", attempt);
+        let _ = tab.evaluate("window.scrollBy(0, 200);", false);
+        sleep(Duration::from_secs(2)).await;
+    }
 
-    // Click ke baad khulne wale fake ad popups ko handle karna
+    if !clicked {
+        return Err(format!("Fatal: JS Engine could not locate or click '{}'", action_name).into());
+    }
+
+    // Click ke turant baad khulne wale fake ad tabs ko band karo
     sleep(Duration::from_secs(2)).await; 
     if let Ok(all_tabs) = browser.get_tabs() {
         if all_tabs.len() > 1 {
@@ -53,8 +92,8 @@ async fn run_bot() -> Result<(), Box<dyn std::error::Error>> {
         .args(vec![
             OsStr::new("--no-sandbox"), 
             OsStr::new("--disable-dev-shm-usage"),
-            OsStr::new("--window-size=1280,800"),
-            OsStr::new("--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"),
+            OsStr::new("--window-size=1280,1024"),
+            OsStr::new("--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"),
             OsStr::new("--disable-blink-features=AutomationControlled")
         ])
         .build()?;
@@ -63,40 +102,36 @@ async fn run_bot() -> Result<(), Box<dyn std::error::Error>> {
     let tab = browser.new_tab()?;
 
     let target_url = "https://shortxlinks.in/Rs5gh46";
-    println!("[Start] Navigating to: {}", target_url);
+    println!("[Start] Navigating to target link: {}", target_url);
     tab.navigate_to(target_url)?;
     tab.wait_until_navigated()?;
 
-    // --- CYCLE 1: Jaisa tumne kaha, yahan turant bina kisi wait ke click hoga ---
+    // --- CYCLE 1: Instant clicks without long delays ---
     println!("\n=========================================");
-    println!("          STARTING ROUTINE CYCLE 1/2     ");
+    println!("          EXECUTING ROUTINE CYCLE 1/2    ");
     println!("=========================================");
-    
-    // Last parameter '0' lagaya hai taaki page load hote hi INSTANT click ho jaye
-    perform_action(&browser, &tab, "I'M NOT ROBOT", "I'M NOT ROBOT (Page 1)", 0).await?;
-    perform_action(&browser, &tab, "KLIK 2X UNTUK GENERATE LINK", "KLIK 2X BUTTON", 0).await?;
-    perform_action(&browser, &tab, "LINK DOWNLOAD", "LINK DOWNLOAD", 0).await?;
+    click_element_by_js(&browser, &tab, "robot", "I'M NOT ROBOT", 0).await?;
+    click_element_by_js(&browser, &tab, "klik 2x", "KLIK 2X BUTTON", 0).await?;
+    click_element_by_js(&browser, &tab, "download", "LINK DOWNLOAD", 0).await?;
 
-
-    // --- CYCLE 2: Agar aage ke pages par ad load hone ka wait chahiye toh yahan '4' ya '0' kar sakte ho ---
+    // --- CYCLE 2: Short safe delay for dynamic loading ---
     println!("\n=========================================");
-    println!("          STARTING ROUTINE CYCLE 2/2     ");
+    println!("          EXECUTING ROUTINE CYCLE 2/2    ");
     println!("=========================================");
-    
-    // Agar lagta hai ki second cycle mein bhi instant kaam ho raha hai, toh in '4' ko bhi '0' kar dena
-    perform_action(&browser, &tab, "I'M NOT ROBOT", "I'M NOT ROBOT (Page 2)", 4).await?;
-    perform_action(&browser, &tab, "KLIK 2X UNTUK GENERATE LINK", "KLIK 2X BUTTON", 4).await?;
-    perform_action(&browser, &tab, "LINK DOWNLOAD", "LINK DOWNLOAD", 4).await?;
+    click_element_by_js(&browser, &tab, "robot", "I'M NOT ROBOT", 2).await?;
+    click_element_by_js(&browser, &tab, "klik 2x", "KLIK 2X BUTTON", 0).await?;
+    click_element_by_js(&browser, &tab, "download", "LINK DOWNLOAD", 0).await?;
 
-
-    // Final Step: GET LINK (Ispe 3 second ka safe ad wait diya hai)
-    println!("\n[Final] Looking for final destination link...");
-    perform_action(&browser, &tab, "GET LINK", "GET LINK", 3).await?;
+    // --- FINAL STEP: Get Link ---
+    println!("\n=========================================");
+    println!("          FETCHING FINAL DESTINATION     ");
+    println!("=========================================");
+    click_element_by_js(&browser, &tab, "get link", "FINAL GET LINK", 2).await?;
     
-    sleep(Duration::from_secs(5)).await;
+    sleep(Duration::from_secs(6)).await;
     
     println!("\n=========================================");
-    println!("[SUCCESS] TARGET COMPLETED!");
+    println!("[SUCCESS] BYPASS COMPLETED!");
     println!("Final Landing URL: {}", tab.get_url());
     println!("=========================================\n");
 
@@ -105,9 +140,9 @@ async fn run_bot() -> Result<(), Box<dyn std::error::Error>> {
 
 #[tokio::main]
 async fn main() {
-    println!("=== BOT STARTED: MULTI-SPEED MODE ACTIVATED ===");
+    println!("=== BOT RUNNING: NATIVE JAVASCRIPT INJECTION ACTIVE ===");
     match run_bot().await {
-        Ok(_) => println!("[!] Workflow executed cleanly!"),
+        Ok(_) => println!("[!] Workflow finished cleanly!"),
         Err(e) => eprintln!("[!] FATAL ERROR: {}", e),
     }
 }
