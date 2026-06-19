@@ -1,4 +1,4 @@
-[package]
+here[package]
 name = "stealth-bot"
 version = "0.1.0"
 edition = "2021"
@@ -6,5 +6,3 @@ edition = "2021"
 [dependencies]
 headless_chrome = "1.0"
 tokio = { version = "1.32", features = ["full"] }
-rand = "0.8"
-
