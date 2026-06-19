@@ -4,8 +4,5 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-# Headless chrome control ke liye
 headless_chrome = "1.0.12"
-# Async functions aur runtime ke liye
 tokio = { version = "1.32", features = ["full"] }
-
