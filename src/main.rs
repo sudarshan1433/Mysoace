@@ -3,50 +3,49 @@ use std::ffi::OsStr;
 use std::time::Duration;
 use tokio::time::sleep;
 
-// Smart Helper: Jo space clean karega, scroll karega aur element dhoondega
-async fn perform_action(tab: &Tab, search_text: &str, action_name: &str) -> Result<(), Box<dyn std::error::Error>> {
+// Helper: Isme 'wait_before' parameter add kiya hai taaki control hamare hath me ho
+async fn perform_action(
+    browser: &Browser, 
+    tab: &Tab, 
+    search_text: &str, 
+    action_name: &str, 
+    wait_before: u64
+) -> Result<(), Box<dyn std::error::Error>> {
     println!("\n[Info] Current URL: {}", tab.get_url());
-    println!("[Step] Searching for Button text containing: \"{}\"...", action_name);
     
-    // Ant-bot aur lazy loading trigger karne ke liye thoda scroll down code inject kiya
-    let _ = tab.evaluate("window.scrollBy(0, 350);", false);
-    sleep(Duration::from_secs(2)).await;
+    // Agar wait_before 0 se bada hai, tabhi rukega, nahi toh skip!
+    if wait_before > 0 {
+        println!("[Wait] Letting ads load for {} seconds...", wait_before);
+        sleep(Duration::from_secs(wait_before)).await;
+    } else {
+        println!("[Instant] No wait required for this page. Targetting immediately!");
+    }
 
-    // Robust XPath: Yeh uppercase/lowercase handles karta hai aur hidden spaces normalize karta hai
     let xpath = format!(
         "//*[contains(translate(normalize-space(.), 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), '{}')]",
         search_text.to_lowercase()
     );
 
-    let mut attempts = 0;
-    let max_attempts = 8; // 8 * 5s = 40 seconds max wait for timers
-    
-    while attempts < max_attempts {
-        match tab.wait_for_xpath(&xpath) {
-            Ok(element) => {
-                // Element ko center mein laane ke liye scroll into view
-                let _ = element.scroll_into_view();
-                sleep(Duration::from_secs(1)).await;
-                
-                element.click()?;
-                println!("[Success] Clicked: {}. Waiting for page reaction...", action_name);
-                sleep(Duration::from_secs(6)).await;
-                return Ok(());
-            }
-            Err(_) => {
-                attempts += 1;
-                // Thoda aur scroll down agar button hidden ho
-                let _ = tab.evaluate("window.scrollBy(0, 150);", false);
-                println!(
-                    "[Wait] '{}' not visible yet. Retrying ({}/{}) in 5s...", 
-                    action_name, attempts, max_attempts
-                );
-                sleep(Duration::from_secs(5)).await;
+    let element = tab.wait_for_xpath(&xpath)?;
+    element.scroll_into_view()?;
+    element.click()?;
+    println!("[Success] Clicked: {}", action_name);
+
+    // Click ke baad khulne wale fake ad popups ko handle karna
+    sleep(Duration::from_secs(2)).await; 
+    if let Ok(all_tabs) = browser.get_tabs() {
+        if all_tabs.len() > 1 {
+            for t in all_tabs {
+                let url = t.get_url();
+                if !url.contains("shortxlinks") && !url.contains("himalaycollege") && !url.contains("mic1") && !url.contains("about:blank") {
+                    println!("[Ad Control] Closing fake popup tab: {}", url);
+                    let _ = t.close(true);
+                }
             }
         }
     }
-    
-    Err(format!("Timeout: Element '{}' not found on this page.", action_name).into())
+
+    Ok(())
 }
 
 async fn run_bot() -> Result<(), Box<dyn std::error::Error>> {
@@ -68,31 +67,33 @@ async fn run_bot() -> Result<(), Box<dyn std::error::Error>> {
     tab.navigate_to(target_url)?;
     tab.wait_until_navigated()?;
 
-    // Redirect hone ke liye initial break
-    sleep(Duration::from_secs(6)).await;
-
-    // --- LOOP START: 2 Cycles jaisa screenshots mein workflow hai ---
-    for i in 1..=2 {
-        println!("\n=========================================");
-        println!("          STARTING ROUTINE CYCLE {}/2    ", i);
-        println!("=========================================");
-        
-        // Step 1: I'M NOT ROBOT
-        perform_action(&tab, "I'M NOT ROBOT", "I'M NOT ROBOT").await?;
-
-        // Step 2: KLIK 2X UNTUK GENERATE LINK (Exact spelling from screen)
-        perform_action(&tab, "KLIK 2X UNTUK GENERATE LINK", "KLIK 2X BUTTON").await?;
-
-        // Step 3: LINK DOWNLOAD
-        perform_action(&tab, "LINK DOWNLOAD", "LINK DOWNLOAD").await?;
-    }
-    // --- LOOP END ---
-
-    // Final Step: GET LINK
-    println!("\n[Final] Reached shortxlinks domain, looking for final destination...");
-    perform_action(&tab, "GET LINK", "GET LINK").await?;
+    // --- CYCLE 1: Jaisa tumne kaha, yahan turant bina kisi wait ke click hoga ---
+    println!("\n=========================================");
+    println!("          STARTING ROUTINE CYCLE 1/2     ");
+    println!("=========================================");
     
-    sleep(Duration::from_secs(6)).await;
+    // Last parameter '0' lagaya hai taaki page load hote hi INSTANT click ho jaye
+    perform_action(&browser, &tab, "I'M NOT ROBOT", "I'M NOT ROBOT (Page 1)", 0).await?;
+    perform_action(&browser, &tab, "KLIK 2X UNTUK GENERATE LINK", "KLIK 2X BUTTON", 0).await?;
+    perform_action(&browser, &tab, "LINK DOWNLOAD", "LINK DOWNLOAD", 0).await?;
+
+
+    // --- CYCLE 2: Agar aage ke pages par ad load hone ka wait chahiye toh yahan '4' ya '0' kar sakte ho ---
+    println!("\n=========================================");
+    println!("          STARTING ROUTINE CYCLE 2/2     ");
+    println!("=========================================");
+    
+    // Agar lagta hai ki second cycle mein bhi instant kaam ho raha hai, toh in '4' ko bhi '0' kar dena
+    perform_action(&browser, &tab, "I'M NOT ROBOT", "I'M NOT ROBOT (Page 2)", 4).await?;
+    perform_action(&browser, &tab, "KLIK 2X UNTUK GENERATE LINK", "KLIK 2X BUTTON", 4).await?;
+    perform_action(&browser, &tab, "LINK DOWNLOAD", "LINK DOWNLOAD", 4).await?;
+
+
+    // Final Step: GET LINK (Ispe 3 second ka safe ad wait diya hai)
+    println!("\n[Final] Looking for final destination link...");
+    perform_action(&browser, &tab, "GET LINK", "GET LINK", 3).await?;
+    
+    sleep(Duration::from_secs(5)).await;
     
     println!("\n=========================================");
     println!("[SUCCESS] TARGET COMPLETED!");
@@ -104,7 +105,7 @@ async fn run_bot() -> Result<(), Box<dyn std::error::Error>> {
 
 #[tokio::main]
 async fn main() {
-    println!("=== BOT STARTED: STRICT SPELLING & SCROLL MECHANISM ACTIVE ===");
+    println!("=== BOT STARTED: MULTI-SPEED MODE ACTIVATED ===");
     match run_bot().await {
         Ok(_) => println!("[!] Workflow executed cleanly!"),
         Err(e) => eprintln!("[!] FATAL ERROR: {}", e),
