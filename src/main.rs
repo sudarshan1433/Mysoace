@@ -10,31 +10,57 @@ async fn click_element_by_js(
     action_name: &str, 
     wait_before: u64
 ) -> Result<(), Box<dyn std::error::Error>> {
-    println!("\n[Info] Current URL: {}", tab.get_url());
-    
     if wait_before > 0 {
-        println!("[Wait] Pausing for {} seconds...", wait_before);
+        println!("[Wait] Pausing for {} seconds before searching for '{}'...", wait_before, action_name);
         sleep(Duration::from_secs(wait_before)).await;
     }
 
+    println!("\n[Info] Current URL: {}", tab.get_url());
     println!("[Step] JS Engine searching for: '{}'...", action_name);
 
+    // Advanced JS jo deep elements dhoondega aur hidden/timers wale buttons bypass karega
     let js_script = format!(
         r#"
         (() => {{
             const target = "{}".toLowerCase();
-            const elements = document.querySelectorAll('button, a, div, span, p, input[type="button"]');
-            for (let el of elements) {{
-                let text = (el.innerText || el.textContent || "").toLowerCase().trim();
-                if (text.includes(target)) {{
-                    el.scrollIntoView({{ behavior: 'instant', block: 'center', inline: 'center' }});
-                    el.click();
-                    ['mousedown', 'mouseup', 'click'].forEach(eventType => {{
-                        const ev = new MouseEvent(eventType, {{ bubbles: true, cancelable: true, view: window }});
-                        el.dispatchEvent(ev);
-                    }});
-                    return true;
+            const allElements = document.querySelectorAll('*');
+            let bestElement = null;
+
+            for (let el of allElements) {{
+                // Bekar ke tags ko skip karo
+                if (['SCRIPT', 'STYLE', 'NOSCRIPT', 'HTML', 'BODY', 'HEAD', 'META', 'IFRAME'].includes(el.tagName)) continue;
+
+                // V.IMP: Check karo ki element actually screen par visible hai (Hidden by timer bypass)
+                const style = window.getComputedStyle(el);
+                if (style.display === 'none' || style.visibility === 'hidden' || el.offsetWidth === 0 || el.offsetHeight === 0) {{
+                    continue;
                 }}
+
+                // Standard text ya input button ki value dono read karo
+                let text = (el.innerText || el.value || "").toLowerCase().replace(/\s+/g, ' ').trim();
+                
+                if (text.includes(target)) {{
+                    // Deepest child override karta jayega
+                    bestElement = el;
+                }}
+            }}
+
+            if (bestElement) {{
+                // Element ko focus mein laao
+                bestElement.scrollIntoView({{ behavior: 'instant', block: 'center', inline: 'center' }});
+                
+                // Agar nayi tab me khulne wala hai, toh usko usi page me force kholne ke liye target hatao
+                if (bestElement.hasAttribute('target')) {{
+                    bestElement.removeAttribute('target');
+                }}
+                
+                // Human-like clicks bhej kar trigger karo
+                ['mouseover', 'mousedown', 'mouseup', 'click'].forEach(eventType => {{
+                    bestElement.dispatchEvent(new MouseEvent(eventType, {{ bubbles: true, cancelable: true, view: window }}));
+                }});
+                bestElement.click();
+                
+                return true;
             }}
             return false;
         }})()
@@ -43,31 +69,33 @@ async fn click_element_by_js(
     );
 
     let mut clicked = false;
-    for attempt in 1..=6 {
+    // Timeout bada kar 50 Seconds kar diya hai (20 attempts * 2.5s)
+    // Ye har website ka timer tod dega
+    for attempt in 1..=20 {
         if let Ok(remote_obj) = tab.evaluate(&js_script, true) {
             if let Some(b) = remote_obj.value.and_then(|v| v.as_bool()) {
                 if b {
-                    println!("[Success] JS executed and successfully clicked '{}' (Attempt {})!", action_name, attempt);
+                    println!("[Success] ✅ JS executed and successfully clicked '{}' (Attempt {})!", action_name, attempt);
                     clicked = true;
                     break;
                 }
             }
         }
-        println!("[Wait] Button not ready yet, scrolling down and retrying ({}/6)...", attempt);
-        let _ = tab.evaluate("window.scrollBy(0, 200);", false);
-        sleep(Duration::from_secs(2)).await;
+        println!("[Wait] ⏳ Button hidden or timer running. Scrolling and retrying ({}/20)...", attempt);
+        let _ = tab.evaluate("window.scrollBy(0, 400);", false);
+        sleep(Duration::from_millis(2500)).await;
     }
 
     if !clicked {
-        return Err(format!("Fatal: JS Engine could not locate or click '{}'", action_name).into());
+        return Err(format!("Fatal: JS Engine could not locate or click '{}' after 50 seconds", action_name).into());
     }
 
-    sleep(Duration::from_secs(2)).await; 
+    // Page load hone ka buffer time
+    sleep(Duration::from_secs(3)).await; 
     
-    // --- BUG FIXED HERE: Added .lock() before checking Ok() ---
+    // Faltu ki ad tabs block karne ka logic
     if let Ok(all_tabs) = browser.get_tabs().lock() {
         if all_tabs.len() > 1 {
-            // Rust safety: list ko pehle clone kar lo taaki loop ke dauran crash na ho
             let mut tabs_to_close = Vec::new();
             for t in all_tabs.iter() {
                 let url = t.get_url();
@@ -77,7 +105,7 @@ async fn click_element_by_js(
             }
             
             for t in tabs_to_close {
-                println!("[Ad Control] Closing fake popup tab: {}", t.get_url());
+                println!("[Ad Control] 🚫 Closing fake popup tab: {}", t.get_url());
                 let _ = t.close(true);
             }
         }
@@ -109,15 +137,15 @@ async fn run_bot() -> Result<(), Box<dyn std::error::Error>> {
     println!("          EXECUTING ROUTINE CYCLE 1/2    ");
     println!("=========================================");
     click_element_by_js(&browser, &tab, "robot", "I'M NOT ROBOT", 0).await?;
-    click_element_by_js(&browser, &tab, "klik 2x", "KLIK 2X BUTTON", 0).await?;
-    click_element_by_js(&browser, &tab, "download", "LINK DOWNLOAD", 0).await?;
+    click_element_by_js(&browser, &tab, "klik 2x", "KLIK 2X BUTTON", 2).await?;
+    click_element_by_js(&browser, &tab, "download", "LINK DOWNLOAD", 2).await?;
 
     println!("\n=========================================");
     println!("          EXECUTING ROUTINE CYCLE 2/2    ");
     println!("=========================================");
     click_element_by_js(&browser, &tab, "robot", "I'M NOT ROBOT", 2).await?;
-    click_element_by_js(&browser, &tab, "klik 2x", "KLIK 2X BUTTON", 0).await?;
-    click_element_by_js(&browser, &tab, "download", "LINK DOWNLOAD", 0).await?;
+    click_element_by_js(&browser, &tab, "klik 2x", "KLIK 2X BUTTON", 2).await?;
+    click_element_by_js(&browser, &tab, "download", "LINK DOWNLOAD", 2).await?;
 
     println!("\n=========================================");
     println!("          FETCHING FINAL DESTINATION     ");
@@ -136,7 +164,7 @@ async fn run_bot() -> Result<(), Box<dyn std::error::Error>> {
 
 #[tokio::main]
 async fn main() {
-    println!("=== BOT RUNNING: NATIVE JAVASCRIPT INJECTION ACTIVE ===");
+    println!("=== BOT RUNNING: ADVANCED JS INJECTION & ANTI-TIMER ACTIVE ===");
     match run_bot().await {
         Ok(_) => println!("[!] Workflow finished cleanly!"),
         Err(e) => eprintln!("[!] FATAL ERROR: {}", e),
