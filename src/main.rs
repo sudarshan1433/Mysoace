@@ -3,16 +3,16 @@ use std::ffi::OsStr;
 use std::time::Duration;
 use tokio::time::sleep;
 
-// Helper function: Yeh verify karta hai ki button click hua ya nahi
+// Helper: Yeh function har click ko perform karega aur check karega
 fn perform_action(tab: &Tab, xpath: &str, action_name: &str) -> Result<(), Box<dyn std::error::Error>> {
-    println!("[Step] Trying to find/click: {}...", action_name);
+    println!("[Step] Searching for: {}...", action_name);
     
-    // Element wait karo aur click karo
+    // Element ka wait karo (timeout 20 sec)
     let element = tab.wait_for_xpath(xpath)?;
     element.click()?;
     
-    println!("[Success] Clicked: {}. Waiting for response...", action_name);
-    sleep(Duration::from_secs(6)).await; // Page reload ke liye wait
+    println!("[Success] Clicked: {}. Waiting...", action_name);
+    sleep(Duration::from_secs(5)).await; 
     
     Ok(())
 }
@@ -34,9 +34,9 @@ async fn run_bot() -> Result<(), Box<dyn std::error::Error>> {
     tab.navigate_to(target_url)?;
     tab.wait_until_navigated()?;
 
-    // --- LOOP START: Yeh sequence 2 baar chalega ---
+    // --- LOOP START: Ye sequence 2 baar chalega ---
     for i in 1..=2 {
-        println!("\n=== CYCLE {}/2 STARTED ===", i);
+        println!("\n=== STARTING CYCLE {}/2 ===", i);
         
         // 1. I'm Not Robot
         perform_action(&tab, "//*[contains(text(), \"I'M NOT ROBOT\")]", "I'M NOT ROBOT")?;
@@ -47,7 +47,7 @@ async fn run_bot() -> Result<(), Box<dyn std::error::Error>> {
         // 3. Link Download
         perform_action(&tab, "//*[contains(text(), \"LINK DOWNLOAD\")]", "LINK DOWNLOAD")?;
         
-        println!("=== CYCLE {}/2 FINISHED ===\n", i);
+        println!("=== FINISHED CYCLE {}/2 ===\n", i);
     }
     // --- LOOP END ---
 
