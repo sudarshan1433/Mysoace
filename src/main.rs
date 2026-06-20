@@ -1,4 +1,4 @@
-hereuse headless_chrome::{Browser, LaunchOptionsBuilder, Tab};
+use headless_chrome::{Browser, LaunchOptionsBuilder, Tab};
 use std::ffi::OsStr;
 use std::time::Duration;
 use tokio::time::sleep;
