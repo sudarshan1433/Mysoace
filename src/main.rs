@@ -44,7 +44,7 @@ async fn click_element_by_js(
     );
 
     let mut clicked = false;
-    for attempt in 1..=20 {
+    for attempt in 1..=15 {
         if let Ok(remote_obj) = tab.evaluate(&js_script, true) {
             if let Some(b) = remote_obj.value.and_then(|v| v.as_bool()) {
                 if b {
@@ -54,7 +54,8 @@ async fn click_element_by_js(
                 }
             }
         }
-        sleep(Duration::from_millis(2000)).await;
+        println!("[Wait] ⏳ Searching... ({}/15)", attempt);
+        sleep(Duration::from_millis(3000)).await;
     }
 
     if !clicked {
@@ -76,29 +77,29 @@ async fn run_bot() -> Result<(), Box<dyn std::error::Error>> {
     let browser = Browser::new(options)?;
     let tab = browser.new_tab()?;
 
-    // 1. Initial Navigation
     println!("[Start] Navigating to: https://shortxlinks.in/Rs5gh46");
     tab.navigate_to("https://shortxlinks.in/Rs5gh46")?;
     tab.wait_until_navigated()?;
-    println!("[Info] Current URL: {}", tab.get_url()?); // Log link
+    
+    // Yahan fix kiya hai: tab.get_url() ke aage '?' hataya hai
+    println!("[Info] Current URL: {}", tab.get_url()); 
 
-    // 2. Click Robot
     click_element_by_js(&tab, "robot", "I'M NOT ROBOT", 3).await?;
     
-    // Wait for Redirect
     println!("[Wait] Redirect detected, waiting...");
     sleep(Duration::from_secs(7)).await; 
     tab.wait_until_navigated()?; 
-    println!("[Info] After Redirect URL: {}", tab.get_url()?); // Log link
+    
+    // Yahan fix kiya hai: '?' hataya hai
+    println!("[Info] After Redirect URL: {}", tab.get_url()); 
 
-    // 3. Click KLIK 2X
     click_element_by_js(&tab, "klik 2x", "KLIK 2X", 3).await?;
     
-    // Wait for next Redirect
-    println!("[Wait] Waiting for final page...");
     sleep(Duration::from_secs(7)).await;
     tab.wait_until_navigated()?;
-    println!("[Info] Final Destination URL: {}", tab.get_url()?); // Log link
+    
+    // Yahan fix kiya hai: '?' hataya hai
+    println!("[Info] Final Destination URL: {}", tab.get_url()); 
 
     Ok(())
 }
