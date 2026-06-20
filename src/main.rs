@@ -101,7 +101,7 @@ async fn run_bot() -> Result<(), Box<dyn std::error::Error>> {
     let browser = Browser::new(options)?;
     let tab = browser.new_tab()?;
 
-    let target_url = "https://shortxlinks.in/Rs5gh46";
+    let target_url = "https://shortxlinks.com/kZAOwm";
     println!("[Start] Navigating to: {}", target_url);
     tab.navigate_to(target_url)?;
     tab.wait_until_navigated()?;
