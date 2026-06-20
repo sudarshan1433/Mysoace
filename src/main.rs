@@ -1,4 +1,4 @@
-use headless_chrome::{Browser, LaunchOptionsBuilder, Tab};
+hereuse headless_chrome::{Browser, LaunchOptionsBuilder, Tab};
 use std::ffi::OsStr;
 use std::time::Duration;
 use tokio::time::sleep;
@@ -16,9 +16,9 @@ async fn click_element_by_js(
     }
 
     println!("\n[Info] Current URL: {}", tab.get_url());
-    println!("[Step] JS Engine searching for: '{}' (Text & Image Mode)...", action_name);
+    println!("[Step] JS Engine searching for: '{}' (Super-Scanner Mode)...", action_name);
 
-    // Advanced JS jo HTML Text ke sath Images (alt, title, src) ko bhi dhoondega
+    // Advanced JS jo ID, Class, aur har possible tag mein button ko dhoondega
     let js_script = format!(
         r#"
         (() => {{
@@ -34,45 +34,40 @@ async fn click_element_by_js(
                     continue;
                 }}
 
-                // 1. Text aur Values check karo
                 let textContent = (el.innerText || el.value || "").toLowerCase().replace(/\s+/g, ' ').trim();
-                
-                // 2. Images ke tags (alt, title) aur src check karo (YAHI MAIN FIX HAI BUTTON KE LIYE)
                 let altContent = (el.getAttribute('alt') || el.getAttribute('title') || "").toLowerCase();
                 let srcContent = (el.getAttribute('src') || "").toLowerCase();
+                let idContent = (el.id || "").toLowerCase();
+                let classContent = (typeof el.className === 'string' ? el.className : "").toLowerCase();
+                let nameContent = (el.getAttribute('name') || "").toLowerCase();
                 
-                if (textContent.includes(target) || altContent.includes(target) || srcContent.includes(target)) {{
+                let isIframeMatch = el.tagName === 'IFRAME' && srcContent.includes(target);
+
+                if (textContent.includes(target) || altContent.includes(target) || srcContent.includes(target) || 
+                    idContent.includes(target) || classContent.includes(target) || nameContent.includes(target) || isIframeMatch) {{
                     bestElement = el;
                 }}
             }}
 
             if (bestElement) {{
-                // Screen ke center mein laao
-                bestElement.scrollIntoView({{ behavior: 'instant', block: 'center', inline: 'center' }});
+                bestElement.scrollIntoView({{ behavior: 'smooth', block: 'center', inline: 'center' }});
                 
                 if (bestElement.hasAttribute('target')) {{
                     bestElement.removeAttribute('target');
                 }}
                 
-                // Element ki exact coordinates nikalo
                 const rect = bestElement.getBoundingClientRect();
                 const x = rect.left + (rect.width / 2);
                 const y = rect.top + (rect.height / 2);
                 
-                // Advanced JS Click: Coordinate based taaki invisible ad overlays bypass ho jayein
                 const clickEvent = new MouseEvent('click', {{
-                    view: window,
-                    bubbles: true,
-                    cancelable: true,
-                    clientX: x,
-                    clientY: y
+                    view: window, bubbles: true, cancelable: true, clientX: x, clientY: y
                 }});
                 
                 bestElement.dispatchEvent(new MouseEvent('mouseover', {{ bubbles: true }}));
                 bestElement.dispatchEvent(new MouseEvent('mousedown', {{ bubbles: true }}));
                 bestElement.dispatchEvent(new MouseEvent('mouseup', {{ bubbles: true }}));
                 
-                // Dispatch coordinate event & standard click fallback
                 bestElement.dispatchEvent(clickEvent);
                 bestElement.click();
                 
@@ -86,7 +81,7 @@ async fn click_element_by_js(
 
     let mut clicked = false;
     
-    // Timer Bypass Logic: 20 attempts
+    // SMART SCROLL LOGIC
     for attempt in 1..=20 {
         if let Ok(remote_obj) = tab.evaluate(&js_script, true) {
             if let Some(b) = remote_obj.value.and_then(|v| v.as_bool()) {
@@ -97,8 +92,22 @@ async fn click_element_by_js(
                 }
             }
         }
-        println!("[Wait] ⏳ Button hidden/timer running. Scrolling and retrying ({}/20)...", attempt);
-        let _ = tab.evaluate("window.scrollBy(0, 400);", false);
+        
+        if attempt <= 5 {
+            // Pehle 12.5 Seconds: Top par hi ruko aur image aane ka wait karo
+            println!("[Wait] ⏳ Searching at TOP. Waiting for image to load... ({}/20)", attempt);
+            let _ = tab.evaluate("window.scrollTo(0, 0);", false);
+        } else {
+            // Uske baad: Agar top pe nahi hai toh thoda niche dhoondo, aur beech me wapas top check karo
+            if attempt % 4 == 0 {
+                println!("[Wait] ⏳ Jumping back to TOP to re-check... ({}/20)", attempt);
+                let _ = tab.evaluate("window.scrollTo(0, 0);", false);
+            } else {
+                println!("[Wait] ⏳ Scrolling down slightly... ({}/20)", attempt);
+                let _ = tab.evaluate("window.scrollBy(0, 300);", false);
+            }
+        }
+        
         sleep(Duration::from_millis(2500)).await;
     }
 
@@ -151,7 +160,6 @@ async fn run_bot() -> Result<(), Box<dyn std::error::Error>> {
     println!("\n=========================================");
     println!("          EXECUTING ROUTINE CYCLE 1/2    ");
     println!("=========================================");
-    // Updated search keyword from "robot" to "robot" (works for text and image source/alt text)
     click_element_by_js(&browser, &tab, "robot", "I'M NOT ROBOT", 0).await?;
     click_element_by_js(&browser, &tab, "klik 2x", "KLIK 2X BUTTON", 2).await?;
     click_element_by_js(&browser, &tab, "download", "LINK DOWNLOAD", 2).await?;
@@ -180,7 +188,7 @@ async fn run_bot() -> Result<(), Box<dyn std::error::Error>> {
 
 #[tokio::main]
 async fn main() {
-    println!("=== BOT RUNNING: ADVANCED IMAGE-AWARE JS INJECTION ===");
+    println!("=== BOT RUNNING: SMART SCROLL & SUPER-SCANNER JS ===");
     match run_bot().await {
         Ok(_) => println!("[!] Workflow finished cleanly!"),
         Err(e) => eprintln!("[!] FATAL ERROR: {}", e),
