@@ -1,4 +1,4 @@
-use headless_chrome::{Browser, LaunchOptionsBuilder, Tab, protocol::cdp::Input::MouseButton};
+hereuse headless_chrome::{Browser, LaunchOptionsBuilder, Tab};
 use std::ffi::OsStr;
 use std::time::Duration;
 use tokio::time::sleep;
@@ -16,9 +16,9 @@ async fn click_element_by_js(
     }
 
     println!("\n[Info] Current URL: {}", tab.get_url());
-    println!("[Step] Engine searching for: '{}' (Coordinate Force-Click Mode)...", action_name);
+    println!("[Step] JS Engine searching for: '{}' (Text & Image Mode)...", action_name);
 
-    // Advanced JS jo deepest element dhoondega, usko center me scroll karega, aur uske (X, Y) coordinates dega
+    // Advanced JS jo HTML Text ke sath Images (alt, title, src) ko bhi dhoondega
     let js_script = format!(
         r#"
         (() => {{
@@ -34,24 +34,51 @@ async fn click_element_by_js(
                     continue;
                 }}
 
-                let text = (el.innerText || el.value || "").toLowerCase().replace(/\s+/g, ' ').trim();
+                // 1. Text aur Values check karo
+                let textContent = (el.innerText || el.value || "").toLowerCase().replace(/\s+/g, ' ').trim();
                 
-                if (text.includes(target)) {{
-                    bestElement = el; // Deepest child will override
+                // 2. Images ke tags (alt, title) aur src check karo (YAHI MAIN FIX HAI BUTTON KE LIYE)
+                let altContent = (el.getAttribute('alt') || el.getAttribute('title') || "").toLowerCase();
+                let srcContent = (el.getAttribute('src') || "").toLowerCase();
+                
+                if (textContent.includes(target) || altContent.includes(target) || srcContent.includes(target)) {{
+                    bestElement = el;
                 }}
             }}
 
             if (bestElement) {{
-                // Scroll element to center to ensure coordinates are within viewport
+                // Screen ke center mein laao
                 bestElement.scrollIntoView({{ behavior: 'instant', block: 'center', inline: 'center' }});
                 
+                if (bestElement.hasAttribute('target')) {{
+                    bestElement.removeAttribute('target');
+                }}
+                
+                // Element ki exact coordinates nikalo
                 const rect = bestElement.getBoundingClientRect();
-                return {{
-                    x: rect.left + (rect.width / 2),
-                    y: rect.top + (rect.height / 2)
-                }};
+                const x = rect.left + (rect.width / 2);
+                const y = rect.top + (rect.height / 2);
+                
+                // Advanced JS Click: Coordinate based taaki invisible ad overlays bypass ho jayein
+                const clickEvent = new MouseEvent('click', {{
+                    view: window,
+                    bubbles: true,
+                    cancelable: true,
+                    clientX: x,
+                    clientY: y
+                }});
+                
+                bestElement.dispatchEvent(new MouseEvent('mouseover', {{ bubbles: true }}));
+                bestElement.dispatchEvent(new MouseEvent('mousedown', {{ bubbles: true }}));
+                bestElement.dispatchEvent(new MouseEvent('mouseup', {{ bubbles: true }}));
+                
+                // Dispatch coordinate event & standard click fallback
+                bestElement.dispatchEvent(clickEvent);
+                bestElement.click();
+                
+                return true;
             }}
-            return null;
+            return false;
         }})()
         "#,
         keyword
@@ -59,48 +86,29 @@ async fn click_element_by_js(
 
     let mut clicked = false;
     
-    // Timeout buffer: 20 attempts * 3 seconds
+    // Timer Bypass Logic: 20 attempts
     for attempt in 1..=20 {
-        // 1. Try in Main Frame & All Iframes
-        let frames = tab.get_frames();
-        for frame in frames {
-            if let Ok(remote_obj) = tab.evaluate_in_frame(frame.id, &js_script, true) {
-                if let Some(val) = remote_obj.value {
-                    if let Some(obj) = val.as_object() {
-                        let x = obj["x"].as_f64().unwrap_or(0.0);
-                        let y = obj["y"].as_f64().unwrap_or(0.0);
-                        
-                        if x > 0.0 && y > 0.0 {
-                            println!("[Success] ✅ Found '{}' at coordinates ({:.0}, {:.0}) (Attempt {})!", action_name, x, y, attempt);
-                            
-                            // Native browser mouse movement and physical click to bypass invisible overlays
-                            let _ = tab.move_mouse(x, y);
-                            sleep(Duration::from_millis(100)).await; // Human slight pause
-                            let _ = tab.click_mouse(MouseButton::Left);
-                            
-                            clicked = true;
-                            break;
-                        }
-                    }
+        if let Ok(remote_obj) = tab.evaluate(&js_script, true) {
+            if let Some(b) = remote_obj.value.and_then(|v| v.as_bool()) {
+                if b {
+                    println!("[Success] ✅ JS executed and successfully clicked '{}' (Attempt {})!", action_name, attempt);
+                    clicked = true;
+                    break;
                 }
             }
         }
-
-        if clicked { break; }
-        
-        println!("[Wait] ⏳ Button hidden or timer running. Retrying ({}/20)...", attempt);
+        println!("[Wait] ⏳ Button hidden/timer running. Scrolling and retrying ({}/20)...", attempt);
         let _ = tab.evaluate("window.scrollBy(0, 400);", false);
-        sleep(Duration::from_millis(3000)).await;
+        sleep(Duration::from_millis(2500)).await;
     }
 
     if !clicked {
-        return Err(format!("Fatal: Engine could not locate or click '{}' after multiple attempts", action_name).into());
+        return Err(format!("Fatal: JS Engine could not locate or click '{}' after 50 seconds", action_name).into());
     }
 
-    // Page load hone ka buffer time
     sleep(Duration::from_secs(4)).await; 
     
-    // Faltu ki ad tabs block karne ka logic (Aapka original logic)
+    // Ad Blocker Logic
     if let Ok(all_tabs) = browser.get_tabs().lock() {
         if all_tabs.len() > 1 {
             let mut tabs_to_close = Vec::new();
@@ -127,7 +135,7 @@ async fn run_bot() -> Result<(), Box<dyn std::error::Error>> {
             OsStr::new("--no-sandbox"), 
             OsStr::new("--disable-dev-shm-usage"),
             OsStr::new("--window-size=1280,1024"),
-            OsStr::new("--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"),
+            OsStr::new("--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36"),
             OsStr::new("--disable-blink-features=AutomationControlled")
         ])
         .build()?;
@@ -143,6 +151,7 @@ async fn run_bot() -> Result<(), Box<dyn std::error::Error>> {
     println!("\n=========================================");
     println!("          EXECUTING ROUTINE CYCLE 1/2    ");
     println!("=========================================");
+    // Updated search keyword from "robot" to "robot" (works for text and image source/alt text)
     click_element_by_js(&browser, &tab, "robot", "I'M NOT ROBOT", 0).await?;
     click_element_by_js(&browser, &tab, "klik 2x", "KLIK 2X BUTTON", 2).await?;
     click_element_by_js(&browser, &tab, "download", "LINK DOWNLOAD", 2).await?;
@@ -171,7 +180,7 @@ async fn run_bot() -> Result<(), Box<dyn std::error::Error>> {
 
 #[tokio::main]
 async fn main() {
-    println!("=== BOT RUNNING: COORDINATE FORCE-CLICK & ANTI-TIMER ACTIVE ===");
+    println!("=== BOT RUNNING: ADVANCED IMAGE-AWARE JS INJECTION ===");
     match run_bot().await {
         Ok(_) => println!("[!] Workflow finished cleanly!"),
         Err(e) => eprintln!("[!] FATAL ERROR: {}", e),
