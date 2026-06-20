@@ -78,7 +78,7 @@ async fn run_bot() -> Result<(), Box<dyn std::error::Error>> {
     let tab = browser.new_tab()?;
 
     println!("[Start] Navigating to: https://shortxlinks.in/Rs5gh46");
-    tab.navigate_to("https://shortxlinks.in/Rs5gh46")?;
+    tab.navigate_to("https://shortxlinks.com/79Glxq")?;
     tab.wait_until_navigated()?;
     
     // Yahan fix kiya hai: tab.get_url() ke aage '?' hataya hai
